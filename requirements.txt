@@ -1,0 +1,9 @@
+# Runtime dependencies (kept minimal for serverless cold starts)
+fastapi>=0.115,<1.0
+uvicorn>=0.30,<1.0
+pydantic>=2.7,<3.0
+onnxruntime>=1.19,<2.0
+# transformers is used for the RoBERTa tokenizer only at runtime
+# (inference runs on ONNX Runtime, not PyTorch).
+transformers>=4.44,<5.0
+numpy>=1.26,<3.0

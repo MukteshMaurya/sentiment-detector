@@ -45,6 +45,21 @@ to an **int8-quantized ONNX** graph (~231 MB) that runs on **ONNX Runtime**
 > function size limit (291 MB > 225 MB) and the Git-LFS model arrived as an
 > unresolved pointer (HTTP 503).
 
+## Deployment status
+
+| Component | URL | State |
+|---|---|---|
+| GitHub | https://github.com/MukteshMaurya/sentiment-detector | **Deployed** (branch `main`, Git LFS model) |
+| Backend (Render) | *(not deployed yet — pending Render account)* | NOT DEPLOYED |
+| Frontend (Vercel) | `https://sentiment-detector-tau.vercel.app` (existing), new migration deploy pending | NOT DEPLOYED (migration) |
+
+Production deployments on Render and Vercel require account credentials and
+were **not** run from this machine. Until then the local, fully-tested flow
+(backend on `http://localhost:8000`, static frontend on a CORS-allowed origin)
+is authoritative. After deploying, set the backend's `FRONTEND_URL` and the
+frontend's `VITE_API_URL` to the real URLs and follow the End-to-End test
+below.
+
 ## Repository layout
 
 ```
@@ -189,6 +204,19 @@ in a `VITE_*` variable.
 
 Verify the deployment no longer packages the model: the deploy artifact is the
 four static files in `frontend/`, no Vercel Function, no `model.onnx`.
+
+## Production end-to-end verification
+
+After both services are live:
+
+1. `GET https://<render>.onrender.com/health` → `{"status": "ok", ...}`.
+2. `POST https://<render>.onrender.com/api/predict` with `{"text": "I absolutely
+   love this product!"}` → valid JSON with `label`/`confidence`/`scores`.
+3. Open the Vercel URL, enter the three sample texts, confirm the request in
+   DevTools goes to the Render URL (no CORS/404/500 errors) and the result +
+   confidence appear.
+4. First request after idle triggers a Render cold start (free plan): allow
+   extra time; a slow-but-successful first request is expected, not a failure.
 
 ## API contract (unchanged)
 

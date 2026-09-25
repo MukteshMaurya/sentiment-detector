@@ -17,6 +17,68 @@ committed head is `05cdda5`, and both were verified locally. Production
 deployments are NOT performed and NOT claimed: Render and Vercel both require
 user credentials. See the `PHASE 4` / `PHASE 5` sections below.
 
+## PHASE 6 — ACTUAL DEPLOYMENT
+
+Status: **BLOCKED (at the credential-requiring point).** All local code/config
+work, git push, security check, and automated tests are PASS. The actual
+Render and Vercel deployments were NOT performed and are NOT claimed — this
+environment has no Vercel token (Vercel CLI 60.0.1 logged out) and no Render
+credentials. Exact manual steps are below.
+
+Results (this session, commit `89bb88a`):
+
+- **GitHub:** PASS — remote `https://github.com/MukteshMaurya/sentiment-detector.git`;
+  pushed `05cdda5..89bb88a` (`Harden frontend error handling and document
+  Vercel/Render split`); remote `main` head == local `89bb88a` (verified via
+  `git ls-remote`). Working tree clean.
+- **Git LFS:** PASS — `git lfs ls-files` → `4f4b088781 * backend/app/model_assets/model.onnx`
+  (pointer; model stays an LFS object).
+- **Render:** NOT DEPLOYED (no Render credentials).
+- **Render URL:** NOT DEPLOYED (no URL invented).
+- **Render model loading:** NOT VERIFIED on Render. Local-verified: ONNX
+  Runtime 1.30.0 loads the real 242,491,205-byte binary from a neutral cwd;
+  `CPUExecutionProvider` session; predictions work (Phase 4).
+- **Render API:** NOT VERIFIED in production. Local-verified: `/health`
+  `{"status":"ok"}`, `/api/predict` real outputs (Phase 4/5).
+- **Vercel:** NOT DEPLOYED (migration) — requires account; old URL
+  `https://sentiment-detector-tau.vercel.app` still serves the pre-migration
+  build (commit `08afc56`).
+- **Vercel URL:** migration deployment NOT DEPLOYED.
+- **Vercel → Render:** NOT VERIFIED (neither side deployed).
+- **Production inference:** NOT VERIFIED.
+- **CORS:** NOT VERIFIED in production (config verified locally; set
+  `FRONTEND_URL` on Render to the real Vercel domain).
+- **Automated tests:** PASS — `pytest tests -q` from `backend/` → **70
+  passed** (1 harmless StarletteDeprecationWarning); `python -m compileall -q
+  app scripts tests` OK; frontend `node build.js` OK (default → localhost:8000).
+- **Security check (Phase 6O):** PASS — only `.env.example` tracked (no
+  secrets); `.env`/`backend/.env`/`frontend/.env` git-ignored; no private
+  keys/api keys/passwords/tokens in tracked source; Windows paths only in
+  `OPENCODE_PROGRESS.md` dev-docs, none in production code/config.
+
+### Manual dashboard steps (required to finish Phase 6; agent cannot run these)
+
+1. **Render backend** — Render → New → Web Service → repo
+   `MukteshMaurya/sentiment-detector`; Root Directory `backend/`; Runtime
+   Python 3.12; Build `pip install -r requirements.txt`; Start
+   `uvicorn app.main:app --host 0.0.0.0 --port $PORT`; Health Check Path
+   `/health`. Set env `FRONTEND_URL` = the Vercel URL. Render fetches the ONNX
+   model via Git LFS automatically. Note the service URL
+   (`https://<service>.onrender.com`).
+2. **Verify Render model is real, not a pointer** — after deploy:
+   first `GET <render-url>/health` (`loaded: false` until first predict), then
+   `POST <render-url>/api/predict` with the three sample texts; confirm label +
+   confidence (must NOT be an `INVALID_PROTOBUF`/503 error).
+3. **Vercel frontend** — Dashboard → project → Settings → Root Directory
+   `frontend/`; clear any old Python-function config; add env
+   `VITE_API_URL=https://<actual-render-service>.onrender.com`; Redeploy.
+4. **E2E + CORS** — open the Vercel URL, run all three sample texts, check
+   DevTools (no CORS/404/500), confirm result + confidence shown; first request
+   after idle may be slow (free-plan cold start) — not a failure.
+
+Final Phase 6 self-check must be re-run by/with the user after the dashboard
+steps; this file is then updated to COMPLETED with the real URLs.
+
 **Why the split:** the prior single deploy exceeded Vercel's function size
 limit (291.25 MB bundle > 225 MB max) and Git-LFS handling on Vercel delivered
 the 243 MB model as an unresolved LFS pointer → `POST /api/predict` → HTTP 503
@@ -380,23 +442,21 @@ Render credentials on this machine).**
 
 ## NEXT STEPS
 
-1. **DONE — Phase 4 (Render backend)** and **DONE — Phase 5 (Vercel
-   frontend)** — code/config complete and locally verified; 70 tests pass.
-   See the PHASE 4 / PHASE 5 sections.
-2. **PHASE 6 — DEPLOY RENDER BACKEND AND CONNECT VERCEL (user action, needs
-   account credentials):**
-   - Render: create Web Service/Blueprint from this repo, Root Directory
-     `backend/`, Python 3.12, build `pip install -r requirements.txt`, start
-     `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, health `/health`; set
-     `FRONTEND_URL` to the Vercel domain. Render pulls the ONNX model via Git
-     LFS. Note the resulting service URL.
-   - Vercel: Root Directory `frontend/`, env `VITE_API_URL` =
-     `https://<render-service>.onrender.com` (real URL, not placeholder),
-     redeploy (no Python function, no model).
-   - Then: end-to-end HTTPS test from the deployed frontend; verify `/health`
-     and predictions; confirm CORS with the actual Vercel domain.
-3. **Final self-check** — report PASS/FAIL honestly; anything not verifiable
-   without credentials is marked as such.
+1. **DONE — Phases 4 & 5 (Render backend, Vercel frontend)** and **DONE (as far
+   as possible) — Phase 6 prep**: everything committable/pushable/verifiable
+   locally was done (commits `05cdda5`, `89bb88a` pushed to `main`; 70 tests
+   pass; security check clean).
+2. **BLOCKED — Phase 6 deployments (user action, needs accounts):** follow the
+   "Manual dashboard steps" in the PHASE 6 section: (a) Render Web Service from
+   `backend/` (Root Dir `backend/`, build `pip install -r requirements.txt`,
+   start `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, health `/health`,
+   env `FRONTEND_URL` = Vercel URL); (b) verify the Render model loads (real
+   binary, predictions, no INVALID_PROTOBUF); (c) Vercel Root Directory
+   `frontend/` + env `VITE_API_URL` = real Render URL, redeploy; (d) run the
+   end-to-end + CORS check with the three sample texts.
+3. After deployments: re-run the Phase 6 self-check, update OPENCODE_PROGRESS
+   PHASE 6 to COMPLETED with the real Render/Vercel URLs, and update README's
+   Deployment status table.
 
 ## RESUME INSTRUCTION
 

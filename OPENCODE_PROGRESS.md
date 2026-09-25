@@ -18,8 +18,10 @@ script, exported ONNX int8 model, the **inference service**, the **Pydantic
 schemas**, the **FastAPI routes + app assembly**, the **automated test
 suite**, the **model evaluation** (`scripts/evaluate_model.py`, TweetEval
 val + test results), and the **Vercel deployment config** (`vercel.json` +
-root `README.md`) are all in place. Still not implemented: a frontend.
-Next action is the initial git commit (NEXT STEP #10).
+root `README.md`), and the **initial git commit** (`fa0f277`, ONNX via
+Git LFS) are all in place. All numbered NEXT STEPS are complete. Still not
+implemented: a frontend. Next actions (optional): build a frontend and run a
+real Vercel deploy (config is in place but deployment has not been executed).
 
 ## Completed Work
 
@@ -84,6 +86,13 @@ Only what is actually implemented:
   was **not executed** from this machine — the config follows documented
   guidance and must be confirmed with `vercel dev` / a real deploy.
 - `tests/test_vercel_config.py` — see `tests/` entry above.
+- **Initial git commit (new this session)** — committed everything as
+  `fa0f277` "Initial commit: AI Sentiment Detector" (36 files, 303k
+  insertions). Staged set reviewed first: no `.env`/secrets, `data/dataset/`
+  and `scripts/.model_cache/` git-ignored and absent from the commit,
+  `app/model_assets/model.onnx` committed as a **Git LFS pointer** (`git lfs
+  ls-files` → `4f4b088781`; Git LFS 3.7.1 installed). Tests re-run green
+  (58 passed) on the commit-ready state; working tree clean after commit.
 
 - `scripts/prepare_model.py` — one-time model export tool (**already run —
   see fixes in "Files Modified"**). Downloads the model from HF (cached under
@@ -461,7 +470,7 @@ small (<0.005) deviations from the FP32 model card figures are expected.
 **None.** The model artifact at `app/model_assets/` exists and is verified,
 the model is evaluated (TweetEval test split -> accuracy 0.7208), and the
 Vercel deployment config (`vercel.json` + `README.md`) is in place.
-Remaining work (frontend, initial git commit) is unblocked.
+Remaining work (optional frontend, real Vercel deploy) is unblocked.
 
 ## Vercel Status
 
@@ -506,8 +515,12 @@ CPU build (`2.14.0+cpu`), so the separate
 ## Environment
 
 - OS: Windows (win32), Python 3.12 (`.python-version`), venv at `.venv/`.
-- Git repo initialized on branch `master` but **no commits yet** (all files untracked).
-- Git LFS configured in `.gitattributes` but not verified installed.
+- Git repo on branch `master` — **initially committed** as `fa0f277`
+  ("Initial commit: AI Sentiment Detector", 36 files). Working tree clean.
+- Git LFS **3.7.1 installed and verified**: `app/model_assets/*.onnx` tracked
+  (`.gitattributes`), `model.onnx` committed as an LFS pointer
+  (`git lfs ls-files` → `4f4b088781 *`). Run `git push --all` when the remote
+  is configured; do not force-push.
 - No `.env` file present; no secrets exist in the repo.
 - Active local dev server origins: `http://localhost:8000`, `http://127.0.0.1:8000`.
 
@@ -570,8 +583,16 @@ Based on the actual state, in dependency order:
    documents setup/run/test/eval and Vercel deploy steps (see Vercel Status).
    `tests/test_vercel_config.py` guards the config (7 tests). Deployment
    itself was **not** run from this machine.
-10. **Commit initial state** via git (with Git LFS for the ONNX model) when
-    ready.
+10. **DONE — Commit initial state** via git (with Git LFS for the ONNX
+    model). Committed as `fa0f277` "Initial commit: AI Sentiment Detector"
+    (36 files, 303k insertions). `model.onnx` is an LFS pointer
+    (`git lfs ls-files` → `4f4b088781`); `data/dataset/` and `scripts/
+    .model_cache/` are git-ignored and not committed; no secrets in the
+    commit. Working tree clean. (Remote push reserved for when a remote is
+    configured.)
+
+All numbered NEXT STEPS are now complete. Optional follow-ups (not numbered
+NEXT STEPS): a frontend, and an actual Vercel deployment run.
 
 ## RESUME INSTRUCTION
 

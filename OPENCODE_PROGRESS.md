@@ -11,25 +11,137 @@ architecture migration tracked in the rest of this file.
 
 ## Current Phase
 
-**Phase 2 — Architecture migration (frontend/backend split).** The
-single Vercel FastAPI deployment was replaced by a split architecture:
+**Phase 5 — Vercel Frontend: COMPLETED (code + local verification).** Phase 4
+(Render backend) and Phase 5 (Vercel frontend) code/configuration are done,
+committed head is `05cdda5`, and both were verified locally. Production
+deployments are NOT performed and NOT claimed: Render and Vercel both require
+user credentials. See the `PHASE 4` / `PHASE 5` sections below.
 
-- **Vercel** → static `frontend/` only (no Python, no model).
-- **Render** → FastAPI backend from `backend/` (module `app.main:app`),
-  ONNX Runtime, tokenizer, and the existing int8 ONNX model.
-- **GitHub** → source of truth; `model.onnx` stays a Git LFS pointer.
-
-The restructure, backend de-static-ification, frontend relocation, CORS rework,
-repo reorganization, new deployment configs (`backend/render.yaml`,
-`frontend/vercel.json`), test adaptation (**70 tests**, all passing), and live
-local verification are **complete**. Pending: local doc polish, `git` commit +
-push, and the actual Vercel/Render deployments (blocked on credentials — see
-Vercel Status / Render Status).
-
-**Why:** the prior single deploy exceeded Vercel's function size limit
-(291.25 MB bundle > 225 MB max) and Git-LFS handling on Vercel delivered the
-243 MB model as an unresolved LFS pointer → `POST /api/predict` → HTTP 503
+**Why the split:** the prior single deploy exceeded Vercel's function size
+limit (291.25 MB bundle > 225 MB max) and Git-LFS handling on Vercel delivered
+the 243 MB model as an unresolved LFS pointer → `POST /api/predict` → HTTP 503
 `INVALID_PROTOBUF`.
+
+## PHASE 4 — RENDER BACKEND
+
+Status: **COMPLETED** (locally verified; deployment requires user credentials).
+
+Phase 4 was already scaffolded by the migration (commit `05cdda5`). This
+session re-verified every requirement against the actual code (no assumptions),
+ran the render-style start command, re-ran the full test suite, and proved ONNX
+load + inference from a neutral working directory.
+
+- **Backend entrypoint:** `backend/app/main.py` → module-level
+  `app = create_app()` (FastAPI). Module path `app.main:app` (cwd
+  `backend/`).
+- **Backend directory (Render Root Directory):** `backend/`.
+- **Requirements file:** `backend/requirements.txt` (fastapi, uvicorn,
+  pydantic, onnxruntime, transformers [tokenizer only], numpy). No dev/eval/
+  export packages (pytest, scikit-learn, onnx, optimum, torch stay in
+  `backend/requirements-dev.txt`); verified no production `.py` file uses
+  torch/sklearn/datasets.
+- **Model path:** `backend/app/model_assets/model.onnx` (int8, 242,491,205
+  bytes). `config.py` resolves it via `Path(__file__)` →
+  `BASE_DIR/app/model_assets`, independent of cwd (proven by running from the
+  temp dir). No Windows paths anywhere in backend `*.py` (grep-clean).
+- **Render build command:** `pip install -r requirements.txt`.
+- **Render start command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+- **Render health check path:** `/health` (exists: `GET /health`).
+- **Environment variables (Render):** `FRONTEND_URL` (Vercel origin; default
+  `https://sentiment-detector-tau.vercel.app`); optional
+  `SENTIMENT_CORS_ORIGINS`, `SENTIMENT_MODEL_DIR`, `SENTIMENT_MODEL_NAME`,
+  `SENTIMENT_MAX_INPUT_CHARS`, `SENTIMENT_MAX_TOKENS`, `SENTIMENT_LOG_LEVEL`
+  (documented in `.env.example`). `$PORT` is provided by Render and used in
+  the start command.
+- **Render config file:** `backend/render.yaml` (web service, python, free,
+  oregon, healthCheckPath `/health`, build/start above, `FRONTEND_URL`
+  `sync: false`).
+- **Tests performed (this session):**
+  - `pytest tests -q` from `backend/` → **70 passed** (1 harmless
+    `StarletteDeprecationWarning`).
+  - ONNX prove-out from a neutral cwd (`Temp\opencode`): config paths resolve
+    correctly, `model.onnx` found (242,491,205 bytes), ONNX Runtime 1.30.0
+    loads it, `CPUExecutionProvider` session initializes:
+    - "I absolutely love this product!" → positive 0.9812
+    - "I hate this product." → negative 0.9336
+    - "The product arrived today." → positive 0.8294 (actual output)
+  - Render-style live start (`uvicorn app.main:app --host 0.0.0.0 --port
+    $PORT`, `PORT=8877`): `/health` → `{"status":"ok", loaded:false}`;
+    predictions via 0.0.0.0-bound server return the three results above;
+    whitespace-only text → **422**.
+  - `git lfs ls-files` → `4f4b088781 * backend/app/model_assets/model.onnx`
+    (still an LFS pointer, not a normal blob).
+- **Remaining problem:** none in code. Deploy to Render is not executable from
+  this machine (no Render credentials / logged-in CLI); it is a user-run step
+  (Root Directory `backend/`, build/start commands as above, `FRONTEND_URL`
+  set to the Vercel URL).
+- **Exact next step:** Phase 5 — Vercel frontend deployment (Root Directory
+  `frontend/`, env `VITE_API_URL` = Render backend URL). Requires user
+  credentials.
+
+## PHASE 5 — VERCEL FRONTEND
+
+Status: **COMPLETED (code + local verification); production deployment is NOT
+performed** — Vercel was not deployed from this machine (no credentials), so
+the production Vercel deployment and the production Render integration are
+explicitly **NOT verified**.
+
+- **Frontend framework:** plain **static HTML/CSS/JavaScript** (no React, no
+  Vite, no package.json — confirmed by inspection). Reused as-is.
+- **Frontend directory:** `frontend/` (7 files: `index.html`, `styles.css`,
+  `app.js`, `build.js`, `favicon.svg`, `vercel.json`, plus git-ignored
+  generated `api-config.js`).
+- **Vercel configuration:** Root Directory `frontend/`; Framework "Other"
+  (plain static); Build `node build.js` (from `frontend/vercel.json`, which
+  has NO `functions` key); Output directory `.`. No install command needed
+  (zero-dependency). No Python function, no backend files, no `model.onnx` in
+  the artifact (verified via `git ls-tree HEAD frontend` — the tree is the
+  frontend files only; the model lives only at
+  `backend/app/model_assets/model.onnx`, still a Git LFS pointer
+  `4f4b088781`).
+- **API environment variable:** `VITE_API_URL` → read by `frontend/build.js`
+  → written to git-ignored `frontend/api-config.js` as
+  `window.SENTIMENT_API_BASE` → consumed by `frontend/app.js`. Default
+  (unset) = `http://localhost:8000`. Vercel must set `VITE_API_URL` to
+  `https://<actual-render-service>.onrender.com` (placeholder in README /
+  `.env.example`; final URL NOT invented). Public browser-visible config; no
+  secrets allowed.
+- **API endpoint used:** `POST ${API_BASE_URL}/api/predict` with
+  `{"text": "..."}` — contract preserved (request/response format, labels,
+  confidence unchanged).
+- **Error handling (hardened this session):** `app.js` now has a 60 s fetch
+  timeout (`AbortController`), malformed/non-JSON response detection
+  ("unexpected response"), distinct messages for 4xx ("rejected
+  (status)"), 422 ("text rejected"), 5xx ("service having trouble"),
+  timeout ("too long to respond"), network failure — no internal stack traces
+  exposed; existing UI style untouched.
+- **Local build result:** `node build.js` succeeded (default →
+  `http://localhost:8000` and with `VITE_API_URL=https://YOUR-RENDER-BACKEND.onrender.com`
+  → that placeholder); output dir = the 7 static files, no missing deps, no
+  broken imports, no backend files included.
+- **Local frontend test result (browser-equivalent, no GUI automation):**
+  frontend served statically on `http://localhost:3000` (a default CORS
+  origin) → `index.html`/`app.js`/`api-config.js` served (app.js contains the
+  `/api/predict` call; config points at `http://localhost:8000`). Against the
+  local backend on 8000: browser-equivalent `POST` from origin
+  `http://localhost:3000` returned ACAA-echoed 200s —
+  love→positive 0.9812, hate→negative 0.9336, arrived→positive 0.8294;
+  whitespace-only text → 422 with CORS headers. True DOM click-through still
+  requires a human/GUI browser run.
+- **CORS:** unchanged (`backend/app/config.py` env-driven origins,
+  `FRONTEND_URL` prepends the Vercel domain, no `*`). Documented: set
+  `FRONTEND_URL` on Render to the actual Vercel production domain.
+- **README:** architecture diagram + Vercel deployment section updated
+  (Root Dir, Framework, Build, Output, `VITE_API_URL` form, browser-visible
+  note). Render/backend sections unchanged.
+- **Existing tests:** `pytest tests -q` from `backend/` → **70 passed**.
+- **Remaining problem:** none in code. Production Vercel deployment +
+  Render production integration are **not verified** (require user
+  credentials / an actual Render service).
+- **Exact next step:** **PHASE 6 — DEPLOY RENDER BACKEND AND CONNECT VERCEL**
+  (user action: create the Render backend from `backend/`, set `FRONTEND_URL`;
+  then in Vercel set Root Directory `frontend/` + `VITE_API_URL` to the real
+  Render URL and redeploy; then end-to-end HTTPS test).
 
 ## Architecture
 
@@ -268,22 +380,29 @@ Render credentials on this machine).**
 
 ## NEXT STEPS
 
-1. **Re-stage and commit the migration** — `git add -A` (picks up the edits
-   made after the initial `git add`), then commit with a message describing the
-   split (e.g. "Migrate to Vercel frontend + Render backend"). Verify
-   `git lfs ls-files` still shows `4f4b088781 * backend/app/model_assets/model.onnx`.
-2. **Push** to `origin main` (do not force-push).
-3. **Deploy (user action — agent is blocked on credentials):**
-   - Render: create Web Service/Blueprint from `backend/`; set `FRONTEND_URL`.
-   - Vercel: set Root Directory `frontend/`; set `VITE_API_URL`; redeploy.
-   - Agent can then verify prod endpoints if network access allows.
-4. **Final self-check** — report PASS/FAIL honestly; anything not verifiable
-   without deployment credentials is marked as such.
+1. **DONE — Phase 4 (Render backend)** and **DONE — Phase 5 (Vercel
+   frontend)** — code/config complete and locally verified; 70 tests pass.
+   See the PHASE 4 / PHASE 5 sections.
+2. **PHASE 6 — DEPLOY RENDER BACKEND AND CONNECT VERCEL (user action, needs
+   account credentials):**
+   - Render: create Web Service/Blueprint from this repo, Root Directory
+     `backend/`, Python 3.12, build `pip install -r requirements.txt`, start
+     `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, health `/health`; set
+     `FRONTEND_URL` to the Vercel domain. Render pulls the ONNX model via Git
+     LFS. Note the resulting service URL.
+   - Vercel: Root Directory `frontend/`, env `VITE_API_URL` =
+     `https://<render-service>.onrender.com` (real URL, not placeholder),
+     redeploy (no Python function, no model).
+   - Then: end-to-end HTTPS test from the deployed frontend; verify `/health`
+     and predictions; confirm CORS with the actual Vercel domain.
+3. **Final self-check** — report PASS/FAIL honestly; anything not verifiable
+   without credentials is marked as such.
 
 ## RESUME INSTRUCTION
 
 Read OPENCODE_PROGRESS.md first.
 Inspect the actual project files (do not trust memory).
-Do not repeat completed work; start from git state (uncommitted migration).
+Do not repeat completed work; start from git state (Phase 4 committed as
+`05cdda5`, working tree clean unless noted).
 Run tests after changes (`cd backend; ..\.venv\Scripts\python.exe -m pytest tests -q`).
 Update OPENCODE_PROGRESS.md after every major milestone.

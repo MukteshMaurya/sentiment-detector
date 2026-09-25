@@ -69,6 +69,19 @@
     analyzeBtn.disabled = input.value.trim().length === 0;
   }
 
+  function withTimeout(ms) {
+    var controller = new AbortController();
+    var handle = setTimeout(function () {
+      controller.abort();
+    }, ms);
+    return {
+      signal: controller.signal,
+      cancel: function () {
+        clearTimeout(handle);
+      },
+    };
+  }
+
   input.addEventListener("input", function () {
     clearError();
     updateCharCount();
@@ -90,34 +103,54 @@
     resultBox.hidden = true;
     setLoading(true);
 
+    var timeout = withTimeout(60000);
+
     fetch(API_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: text }),
+      signal: timeout.signal,
     })
       .then(function (response) {
-        return response.json().then(function (data) {
+        return response.text().then(function (raw) {
+          var data = null;
+          try {
+            data = JSON.parse(raw);
+          } catch (e) {
+            data = null;
+          }
           return { ok: response.ok, status: response.status, data: data };
         });
       })
       .then(function (result) {
-        if (result.ok) {
+        if (result.ok && result.data !== null) {
           renderResult(result.data);
+          return;
+        }
+        if (result.data === null) {
+          showError("The service returned an unexpected response. Please try again.");
+          return;
+        }
+        var detail = result.data.detail;
+        if (typeof detail === "string") {
+          showError(detail);
+        } else if (result.status === 422) {
+          showError("The text was rejected. Please shorten it and try again.");
+        } else if (result.status >= 500) {
+          showError("The model service is having trouble right now. Please try again later.");
         } else {
-          var detail = result.data && result.data.detail;
-          if (typeof detail === "string") {
-            showError(detail);
-          } else if (result.status === 422) {
-            showError("The text was rejected. Please shorten it and try again.");
-          } else {
-            showError("The model could not analyze your text. Please try again.");
-          }
+          showError("The service rejected the request (" + result.status + "). Please try again.");
         }
       })
-      .catch(function () {
-        showError("Network error — could not reach the service. Please try again.");
+      .catch(function (err) {
+        if (err && err.name === "AbortError") {
+          showError("The service took too long to respond. Please try again.");
+        } else {
+          showError("Network error — could not reach the service. Please try again.");
+        }
       })
       .finally(function () {
+        timeout.cancel();
         setLoading(false);
       });
   });

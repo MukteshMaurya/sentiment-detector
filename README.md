@@ -150,6 +150,8 @@ No API keys are used; the model runs locally. Do not commit `.env` files.
 **Start command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 **Health check path:** `/health`
 **Runtime:** Python 3.12
+**Backend URL:** *(placeholder — set after the Render service is created,
+e.g. `https://sentiment-detector-backend.onrender.com`)*
 
 A `backend/render.yaml` blueprint is included. Either:
 
@@ -172,8 +174,11 @@ applies it).
 **Framework:** Other (plain static)
 **Build command:** `node build.js` (from `frontend/vercel.json`)
 **Output directory:** `.` (the frontend dir itself)
-**Environment variable:** `VITE_API_URL` set to the Render service URL, e.g.
-`https://sentiment-detector-backend.onrender.com`
+**Environment variable:** `VITE_API_URL` — the Render backend URL, in the form
+`https://<your-render-service>.onrender.com`. It is injected into the page at
+build time by `frontend/build.js` (into the git-ignored `api-config.js`).
+It is **public browser-visible configuration** — never put secrets or API keys
+in a `VITE_*` variable.
 
 1. Push this repo to GitHub.
 2. In your Vercel project, set Root Directory to `frontend/`.

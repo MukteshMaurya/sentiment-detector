@@ -12,6 +12,9 @@
 
   var MAX_CHARS = 2000;
 
+  var API_BASE_URL = (window.SENTIMENT_API_BASE || "http://localhost:8000").replace(/\/+$/, "");
+  var API_ENDPOINT = API_BASE_URL + "/api/predict";
+
   function renderLabel(label) {
     var cls = "badge badge--" + label;
     var glyph = { positive: "\uD83D\uDC4D", negative: "\uD83D\uDC4E", neutral: "\uD83D\uDC4C" }[label] || "";
@@ -87,7 +90,7 @@
     resultBox.hidden = true;
     setLoading(true);
 
-    fetch("/api/predict", {
+    fetch(API_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: text }),

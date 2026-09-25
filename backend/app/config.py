@@ -37,9 +37,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Directory holding the exported ONNX model + tokenizer files.
 MODEL_DIR = Path(os.getenv("SENTIMENT_MODEL_DIR", str(BASE_DIR / "app" / "model_assets")))
 
-# Directory holding the served frontend (index.html, CSS, JS).
-STATIC_DIR = Path(os.getenv("SENTIMENT_STATIC_DIR", str(BASE_DIR / "app" / "static")))
-
 # Human-readable model identifier returned by the API.
 MODEL_NAME = os.getenv(
     "SENTIMENT_MODEL_NAME",
@@ -56,12 +53,24 @@ MAX_INPUT_CHARS = _int_env("SENTIMENT_MAX_INPUT_CHARS", 2000)
 # for typical inputs and bounds inference latency).
 MAX_TOKENS = _int_env("SENTIMENT_MAX_TOKENS", 256)
 
-# Allowed CORS origins, comma-separated (default: same-origin only + localhost
-# dev + the production deployment so the hosted frontend may call the API
-# cross-origin if it is ever served from a different host).
+# Production frontend origin (Vercel). If set, it is always allowed by CORS;
+# set this to the actual Vercel deployment URL in production.
+FRONTEND_URL = os.getenv("FRONTEND_URL", "").strip()
+
+# Allowed CORS origins, comma-separated. Defaults cover local dev for both the
+# backend and a locally served frontend, plus this repo's production Vercel
+# URL. Override with SENTIMENT_CORS_ORIGINS or prepend via FRONTEND_URL.
+_DEFAULT_FRONTEND_ORIGINS = (
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "https://sentiment-detector-tau.vercel.app",
+)
+if FRONTEND_URL and FRONTEND_URL not in _DEFAULT_FRONTEND_ORIGINS:
+    _DEFAULT_FRONTEND_ORIGINS = (FRONTEND_URL, *_DEFAULT_FRONTEND_ORIGINS)
 CORS_ORIGINS: list[str] = _list_env(
-    "SENTIMENT_CORS_ORIGINS",
-    "http://localhost:8000,http://127.0.0.1:8000,https://sentiment-detector-tau.vercel.app",
+    "SENTIMENT_CORS_ORIGINS", ",".join(_DEFAULT_FRONTEND_ORIGINS)
 )
 
 # Log level for the application logger.

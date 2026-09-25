@@ -1,7 +1,8 @@
 """HTTP routes for the sentiment API.
 
-Exposes ``GET /`` (frontend), ``GET /health``, and ``POST /api/predict`` on a
-shared ``APIRouter``.
+Exposes ``GET /`` (service info), ``GET /health``, and ``POST /api/predict``
+on a shared ``APIRouter``. This backend is deployed separately (Render) from
+the static frontend (Vercel), which calls ``/api/predict`` over HTTPS.
 """
 
 from __future__ import annotations
@@ -9,9 +10,8 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
 
-from app import config
+from app import __version__, config
 from app.models import HealthResponse, PredictRequest, PredictResponse
 from app.services import get_analyzer
 
@@ -21,9 +21,15 @@ router = APIRouter()
 
 
 @router.get("/", include_in_schema=False)
-def index() -> FileResponse:
-    """Serve the AI Sentiment Detector web interface."""
-    return FileResponse(config.STATIC_DIR / "index.html")
+def index() -> dict[str, str]:
+    """Service information for the API root (the frontend lives elsewhere)."""
+    return {
+        "service": "AI Sentiment Detector API",
+        "version": __version__,
+        "docs": "/docs",
+        "health": "/health",
+        "predict": "POST /api/predict",
+    }
 
 
 @router.get("/health", response_model=HealthResponse, tags=["health"])

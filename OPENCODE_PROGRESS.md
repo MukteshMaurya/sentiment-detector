@@ -4,601 +4,286 @@ AI Sentiment Detector
 
 ## Recovery Status
 
-This file was reconstructed after the previous OpenCode session ended
-unexpectedly (context/token limit). It reflects the **actual** state of the
-files on disk as inspected during recovery. Nothing was assumed from memory;
-no features are claimed unless present in the repository.
+This file reflects the **actual** state of the repository as verified during
+the current session. Nothing is assumed from memory; every claim below was
+checked on disk / by running the tools. This document was rewritten for the
+architecture migration tracked in the rest of this file.
 
 ## Current Phase
 
-**Phase 1 — Project Scaffolding (mostly complete).**
+**Phase 2 — Architecture migration (frontend/backend split).** The
+single Vercel FastAPI deployment was replaced by a split architecture:
 
-The package skeleton, configuration layer, dev dependencies, model-export
-script, exported ONNX int8 model, the **inference service**, the **Pydantic
-schemas**, the **FastAPI routes + app assembly**, the **automated test
-suite**, the **model evaluation** (`scripts/evaluate_model.py`, TweetEval
-val + test results), and the **Vercel deployment config** (`vercel.json` +
-root `README.md`), and the **initial git commit** (`fa0f277`, ONNX via
-Git LFS) are all in place. All numbered NEXT STEPS are complete. Still not
-implemented: a frontend. Next actions (optional): build a frontend and run a
-real Vercel deploy (config is in place but deployment has not been executed).
+- **Vercel** → static `frontend/` only (no Python, no model).
+- **Render** → FastAPI backend from `backend/` (module `app.main:app`),
+  ONNX Runtime, tokenizer, and the existing int8 ONNX model.
+- **GitHub** → source of truth; `model.onnx` stays a Git LFS pointer.
 
-## Completed Work
+The restructure, backend de-static-ification, frontend relocation, CORS rework,
+repo reorganization, new deployment configs (`backend/render.yaml`,
+`frontend/vercel.json`), test adaptation (**70 tests**, all passing), and live
+local verification are **complete**. Pending: local doc polish, `git` commit +
+push, and the actual Vercel/Render deployments (blocked on credentials — see
+Vercel Status / Render Status).
 
-Only what is actually implemented:
-
-- Python package skeleton:
-  - `app/__init__.py` — package with `__version__ = "1.0.0"`
-  - `app/api/__init__.py` — declared (empty) API layer
-  - `app/models/__init__.py` — re-exports the schemas from
-    `app/models/schemas.py` (`PredictRequest`, `PredictResponse`)
-  - `app/services/__init__.py` — re-exports the public service API
-    (`Prediction`, `SentimentAnalyzer`, `get_analyzer`) from
-    `app/services/sentiment.py`
-  - `tests/` — **automated test suite (new this session)**:
-  - `tests/test_schemas.py` (14 tests) — unit tests for `PredictRequest`,
-    `PredictResponse`, `HealthResponse`: whitespace stripping, blank / too-
-    long / non-string / extra-field rejection, `MAX_INPUT_CHARS` boundary,
-    label/confidence/scores-key validation, JSON round-trips. No model load.
-  - `tests/test_sentiment_service.py` (12 tests) — smoke tests on the real
-    ONNX model (module-scoped `SentimentAnalyzer` fixture): structured
-    `Prediction` invariants, sentiment direction (positive/negative/neutral
-    labels), lazy + idempotent `load()`, input-validation errors, `max_tokens`
-    override/validation, singleton `get_analyzer()`.
-  - `tests/test_api.py` (17 tests) — `TestClient` API tests: `/health`
-    (unloaded before predict / loaded after), predict happy path + whitespace
-    stripping, 7 invalid payloads → 422, inference failure → 503 (stubbed
-    analyzer), CORS echo / disallowed origin / preflight, 404 unknown route,
-    405 GET on `POST /api/predict`.
-  - `tests/test_evaluate_script.py` (8 tests, new this session) — offline unit
-    tests for `scripts/evaluate_model.py` helpers: aligned TweetEval pair
-    loading (blank-line skipping, non-int / out-of-range label rejection),
-    known-value metric computation (accuracy / macro / weighted / micro F1,
-    per-class precision/recall), report text contents, confusion-matrix CSV
-    round-trip, CLI arg defaults/overrides, and `max_tokens` plumbing through
-    `_predict_all`.
-  - `tests/test_vercel_config.py` (7 tests, new this session) — checks the
-    Vercel deployment config stays in sync with the repo: `vercel.json` is
-    valid JSON, the function is keyed to the real entrypoint `app/main.py`
-    which exports a FastAPI `app`, `maxDuration` (300) is within all plan
-    limits, and the `excludeFiles` globs are the reviewed set and never match
-    runtime assets (`app/`, `requirements.txt`, `model.onnx`).
-  - **`pytest tests -q` → 58 passed** (51 previous + 7 vercel-config tests).
-    Files also pass in isolation. One harmless `StarletteDeprecationWarning`
-    from `fastapi.testclient`.
-
-- `vercel.json` + `README.md` — **Vercel deployment config (new this
-  session)**. Vercel zero-config-detects FastAPI: it looks for a `FastAPI`
-  instance named `app` in `app/main.py` (a supported entrypoint), so the
-  serverless entrypoint is the existing `app.main:app` — no duplicate
-  `api/index.py` was added to avoid entrypoint ambiguity. `vercel.json` keys
-  the resolved function (`"app/main.py"`) with `maxDuration: 300` (the Hobby
-  default *and* maximum, so it works on every plan and comfortably covers the
-  ~15-30 s lazy model cold start) and `excludeFiles:
-  "{tests/**,scripts/**,data/**,**/*.md}"` to slim the bundle. Grounded in
-  Vercel's current FastAPI/Python docs (fetched this session): 500 MB
-  uncompressed Python bundle limit (standard) — the ~231 MB model + deps fits;
-  5 GB Large Functions Beta via `VERCEL_SUPPORT_LARGE_FUNCTIONS=1`; Hobby 2 GB
-  memory; 4.5 MB request-body limit. Root `README.md` documents setup, local
-  run, tests, model export, TweetEval evaluation (with the real numbers), the
-  env-var table, and Vercel deploy steps (git-import + CLI `vercel dev` /
-  `vercel --prod`). The README/`vercel.json` state explicitly that deployment
-  was **not executed** from this machine — the config follows documented
-  guidance and must be confirmed with `vercel dev` / a real deploy.
-- `tests/test_vercel_config.py` — see `tests/` entry above.
-- **Initial git commit (new this session)** — committed everything as
-  `fa0f277` "Initial commit: AI Sentiment Detector" (36 files, 303k
-  insertions). Staged set reviewed first: no `.env`/secrets, `data/dataset/`
-  and `scripts/.model_cache/` git-ignored and absent from the commit,
-  `app/model_assets/model.onnx` committed as a **Git LFS pointer** (`git lfs
-  ls-files` → `4f4b088781`; Git LFS 3.7.1 installed). Tests re-run green
-  (58 passed) on the commit-ready state; working tree clean after commit.
-
-- `scripts/prepare_model.py` — one-time model export tool (**already run —
-  see fixes in "Files Modified"**). Downloads the model from HF (cached under
-  `scripts/.model_cache/`), exports FP32 ONNX via Optimum, applies int8
-  dynamic (weights-only) quantization via
-  `onnxruntime.quantization.quantize_dynamic` (QUInt8), writes
-  `app/model_assets/model.onnx` + `config.json` + tokenizer files
-  (`vocab.json`, `merges.txt`, `tokenizer.json`, `special_tokens_map.json`,
-  `tokenizer_config.json`), then verifies the quantized graph with an ONNX
-  Runtime inference pass checking the logits count (3) and removes the
-  temporary FP32 graph. Heavy imports (torch/transformers/optimum) are
-  deferred inside `run()` and `HF_HOME` is pointed at the cache dir first.
-- **`scripts/evaluate_model.py` — model evaluation tool (new this session,
-  RUN)**. Downloads TweetEval sentiment (SemEval-2017 Task 4A) raw files from
-  `cardiffnlp/tweeteval` GitHub into `data/dataset/` (git-ignored) with stdlib
-  `urllib` (no `datasets` dependency needed), loads aligned (text, label)
-  pairs, runs inference through the deployed `app.services.SentimentAnalyzer`
-  (same int8 ONNX artifact the API serves), and writes scikit-learn metrics to
-  `data/model_evaluation_report.txt` (overall + per-class) and
-  `data/confusion_matrix.csv` (rows = true labels, columns = predicted).
-  CLI: `--split {train,val,test}` (default `test`), `--max-samples N`,
-  `--max-tokens N` (overrides `config.MAX_TOKENS`; default 256), dataset/output
-  dirs, `--verbose`. **Results are real (see Model Evaluation section):**
-  test split 12,284 samples → accuracy **0.7208**, macro F1 **0.7201**,
-  weighted F1 **0.7208** (run with `--max-tokens 64`; TweetEval tweets are
-  short — max 59 tokens on val — so the 64 cap truncates effectively nothing
-  and matches the model's published ~0.718 within noise); val split 2,000 →
-  accuracy **0.7645**. `SentimentAnalyzer.predict()` gained an optional
-  `max_tokens=` kwarg (default `None` = runtime `config.MAX_TOKENS`) so
-  evaluation latency can be bounded without changing the runtime path.
-- `app/config.py` — environment-driven application configuration:
-  - `BASE_DIR`, `MODEL_DIR` (default `app/model_assets`), `MODEL_NAME`
-    (default `cardiffnlp/twitter-roberta-base-sentiment-latest (ONNX int8)`),
-  - `LABELS = ("negative", "neutral", "positive")`
-  - `MAX_INPUT_CHARS` (default 2000), `MAX_TOKENS` (default 256)
-  - `CORS_ORIGINS` (default localhost:8000 / 127.0.0.1:8000)
-  - `LOG_LEVEL`
-  - Verified importable and functional in the current venv.
-- `requirements.txt` — runtime deps: fastapi, uvicorn, pydantic, onnxruntime,
-  transformers (tokenizer only), numpy.
-- `requirements-dev.txt` — dev deps: pytest, httpx, scikit-learn (evaluation),
-  onnx + optimum for one-time model export; notes `pip install torch --index-url .../whl/cpu`.
-- `.python-version` — 3.12
-- `.gitignore` — ignores `.venv`, `.env`, `scripts/.model_cache/`, `data/dataset/`,
-  `data/*.log`, `.vercel/`, model temp artifacts, caches.
-- `.gitattributes` — Git LFS for `app/model_assets/*.onnx`
-- `LICENSE` — MIT, plus third-party notices for cardiffnlp model (CC BY 4.0)
-  and TweetEval (CC BY 3.0).
-- `data/README.md` — documents the evaluation dataset: TweetEval
-  `sentiment` (SemEval-2017 Task 4A), classes negative/neutral/positive,
-  splits train 45,615 / val 2,000 / test 12,284, label mapping identical to
-  the model's own (0=neg, 1=neu, 2=pos); generated outputs
-  `model_evaluation_report.txt` and `confusion_matrix.csv` now exist in
-  `data/`.
-- `.venv` with current runtime dependencies installed (fastapi 0.141.1,
-  uvicorn 0.53.0, pydantic 2.13.5, onnxruntime 1.30.0, transformers 4.57.6,
-  numpy 2.5.3, huggingface_hub 0.36.2, tokenizers 0.22.2).
-- **`app/model_assets/` — EXPORTED and verified.** Contains `model.onnx`
-  (int8-quantized, ~231 MiB / 242,491,205 bytes), `config.json`, and the
-  tokenizer files listed above. Verification inside `prepare_model.py` passed
-  (logits shape `(1, 3)`); an additional end-to-end ONNX Runtime inference
-  sanity check produced correct predictions (see Testing Status).
-- `app/services/sentiment.py` — **inference service (new this session)**:
-  - `Prediction` — frozen dataclass `{label, confidence, scores}` with
-    `as_dict()`; `scores` is a `{"negative": .., "neutral": .., "positive": ..}`
-    probability map.
-  - `SentimentAnalyzer` — loads the int8 ONNX model via
-    `onnxruntime.InferenceSession` (CPUExecutionProvider) + RoBERTa tokenizer
-    via `transformers.AutoTokenizer` from `config.MODEL_DIR`, both lazily on
-    first use under a thread lock (`load()` is idempotent); heavy imports
-    (onnxruntime/transformers) deferred so importing the module is cheap for
-    cold starts.
-  - `predict(text)` — validates input (non-string → `TypeError`; blank →
-    `ValueError`), tokenizes with
-    `max_length=config.MAX_TOKENS, padding="max_length", truncation=True`,
-    runs the session, applies stable softmax, and returns a `Prediction`.
-  - `get_analyzer()` — process-wide singleton (double-checked locking).
-- `app/models/schemas.py` — **Pydantic schemas (new this session)**:
-  - `PredictRequest` — `text` with `StringConstraints(strip_whitespace=True,
-    min_length=1, max_length=config.MAX_INPUT_CHARS)` (2000 default);
-    `extra="forbid"`. Blank/whitespace-only/long/non-string inputs rejected.
-  - `PredictResponse` — `model` (defaults to `config.MODEL_NAME`), `label`
-    (`Literal[*config.LABELS]`), `confidence` and `scores` values constrained
-    to `[0, 1]`; a field validator requires `scores` keys to be exactly the
-    three model labels. `extra="forbid"`.
-  - Re-exported from `app.models` as the public schema API.
-- `app/api/routes.py` — **FastAPI routes (new this session)**:
-  - `GET /health` — returns `HealthResponse{status:"ok", model, labels,
-    loaded}`; `loaded` reflects whether the ONNX session has been created yet
-    (lazy, so false until the first prediction).
-  - `POST /api/predict` — accepts `PredictRequest`, calls the analyzer
-    singleton, returns `PredictResponse`; unexpected inference failures are
-    logged and surfaced as `503 Model inference failed: ...`.
-  - Shared `APIRouter`, re-exported from `app.api`.
-- `app/main.py` — **FastAPI application assembly (new this session)**:
-  - `create_app()` builds the app (title/description/version from
-    `app.__version__`), wires CORS middleware from `config.CORS_ORIGINS`
-    (`allow_credentials=True`, all methods/headers), and includes the router.
-  - Module-level `app = create_app()` for `uvicorn app.main:app`.
-- `app/models/schemas.py` — added `HealthResponse` (see routes entry).
-
-## Project Structure
-
-```
-nlp model/
-├── .gitattributes            Git LFS tracking for model_assets/*.onnx
-├── .gitignore
-├── .python-version           3.12
-├── LICENSE                   MIT + third-party notices
-├── OPENCODE_PROGRESS.md      This recovery file
-├── README.md                 Root docs: setup/run/test/eval/deploy (NEW)
-├── vercel.json               Vercel function config: entrypoint/maxDuration/excludes (NEW)
-├── requirements.txt          Runtime deps
-├── requirements-dev.txt      Dev/test/eval/export deps
-├── app/
-│   ├── __init__.py           Package, __version__ = 1.0.0
-│   ├── config.py             Environment-driven configuration (functional)
-│   ├── main.py               FastAPI assembly: CORS + router (functional)
-│   ├── api/                  HTTP routes (functional)
-│   │   ├── __init__.py       Re-exports the routes router
-│   │   └── routes.py         GET /health, POST /api/predict
-│   ├── models/               Pydantic schemas (functional)
-│   │   ├── __init__.py       Re-exports PredictRequest/Response + HealthResponse
-│   │   └── schemas.py        Request/response schemas + input validation
-│   ├── services/             Inference service (functional)
-│   │   ├── __init__.py      Re-exports Prediction/SentimentAnalyzer/get_analyzer
-│   │   └── sentiment.py     ONNX Runtime + tokenizer wrapper, softmax, singleton
-│   └── model_assets/         model.onnx + config + tokenizer (EXPORTED)
-├── data/
-│   ├── README.md             Dataset + evaluation output documentation
-│   ├── model_evaluation_report.txt   TweetEval test result report (GENERATED)
-│   ├── confusion_matrix.csv   Test-split confusion matrix (GENERATED)
-│   └── dataset/              Downloaded TweetEval files (git-ignored)
-├── tests/
-│   ├── __init__.py             Test suite package
-│   ├── test_schemas.py         14 unit tests (schemas, no model load)
-│   ├── test_sentiment_service.py  12 smoke tests (real ONNX model)
-│   ├── test_api.py             17 API tests via TestClient
-│   ├── test_evaluate_script.py  8 offline unit tests for the eval tool
-│   └── test_vercel_config.py    7 Vercel-config/entrypoint tests (NEW)
-├── scripts/
-│   ├── prepare_model.py        One-time ONNX int8 export tool (run)
-│   ├── evaluate_model.py       TweetEval evaluation tool (run; see Model Evaluation)
-│   └── .model_cache/         (created at first run; git-ignored)
-└── .venv/                    Virtualenv with runtime + dev deps
-```
-
-## Files Created
-
-| File | Purpose |
-|---|---|
-| `app/config.py` | Central, env-based configuration |
-| `app/services/sentiment.py` | Inference service: lazy ONNX + tokenizer loading, `predict`, singleton |
-| `app/models/schemas.py` | Pydantic request/response schemas with input validation (+ `HealthResponse`) |
-| `app/api/routes.py` | FastAPI routes: `GET /health`, `POST /api/predict` |
-| `app/main.py` | FastAPI app assembly (`create_app` + `app`), CORS from config |
-| `tests/test_schemas.py` | 14 schema unit tests |
-| `tests/test_sentiment_service.py` | 12 service smoke tests (real model) |
-| `tests/test_api.py` | 17 API tests via TestClient |
-| `tests/test_evaluate_script.py` | 8 offline unit tests for the evaluation tool |
-| `tests/test_vercel_config.py` | 7 Vercel-config/entrypoint tests (NEW) |
-| `vercel.json` | Vercel function config: `"app/main.py"` entrypoint, `maxDuration 300`, safe `excludeFiles` (NEW) |
-| `README.md` | Root README: setup/run/test/eval + Vercel deploy instructions (NEW) |
-| `app/__init__.py` | Package skeleton placeholder |
-| `scripts/prepare_model.py` | One-time ONNX int8 export tool (run; two bugs fixed) |
-| `scripts/evaluate_model.py` | TweetEval evaluation tool (run; outputs in `data/`) |
-| `data/model_evaluation_report.txt` | TweetEval **test-split** report (accuracy 0.7208) |
-| `data/confusion_matrix.csv` | Test-split confusion matrix (rows = true labels) |
-| `app/model_assets/` | `model.onnx` (int8, ~231 MiB) + `config.json` + tokenizer files — **exported this session** |
-| `requirements.txt` / `requirements-dev.txt` | Dependency manifests |
-| `.python-version` | Python 3.12 pin |
-| `.gitignore` / `.gitattributes` | Ignore rules + Git LFS config |
-| `LICENSE` | MIT + third-party notices |
-| `data/README.md` | Dataset & evaluation documentation |
-| `OPENCODE_PROGRESS.md` | THIS recovery document |
-
-## Files Modified
-
-- `scripts/prepare_model.py` — two bugs fixed while running the export
-  (both required for the export to succeed with the installed versions):
-  1. `RobertaOnnxConfig(..., task="sequence-classification")` →
-     `task="text-classification"` (Optimum 2.1.0 registers the task as
-     `text-classification`; `sequence-classification` raised
-     `Export failed: 'sequence-classification'`).
-  2. `onnxruntime.quantization` was referenced without an explicit import
-     (onnxruntime 1.30.0 does not auto-expose the submodule). Added
-     `from onnxruntime.quantization import QuantType, quantize_dynamic` and
-     changed the call site to use those names directly.
-
-- `app/services/__init__.py` — replaced the empty placeholder with re-exports
-  of the new public service API (`Prediction`, `SentimentAnalyzer`,
-  `get_analyzer`).
-- `app/services/sentiment.py` — **`predict()` gained an optional
-  `max_tokens: int | None = None` keyword** (default `None` keeps the runtime
-  `config.MAX_TOKENS` behavior; values < 1 are rejected). Used by the
-  evaluation tool to bound per-sample latency on large corpora. Default API
-  behavior is unchanged.
-- `app/models/__init__.py` — replaced the empty placeholder with re-exports
-  of the new public schema API (`PredictRequest`, `PredictResponse`).
-- `app/models/schemas.py` — added `HealthResponse` (status/model/labels/
-  loaded) for the new `/health` route.
-- `app/models/__init__.py` and `app/api/__init__.py` — re-export the new
-  `HealthResponse` schema and the routes `router`, respectively.
-
-Notably still absent: only a frontend (not planned as a numbered NEXT STEP).
+**Why:** the prior single deploy exceeded Vercel's function size limit
+(291.25 MB bundle > 225 MB max) and Git-LFS handling on Vercel delivered the
+243 MB model as an unresolved LFS pointer → `POST /api/predict` → HTTP 503
+`INVALID_PROTOBUF`.
 
 ## Architecture
 
-**Actual** (implemented and tested):
+**Actual** (implemented and live-tested locally):
 
 ```
-Frontend (not yet created)
-   └─ HTTP → FastAPI API (app/api/routes.py + app/main.py)
-                └─ Pydantic schemas (app/models/schemas.py)
-                     └─ Service layer (app/services/sentiment.py)
-                          └─ ONNX Runtime inference
-                               └─ cardiffnlp/twitter-roberta-base-sentiment-latest
-                                  (int8-quantized ONNX, tokenizer via transformers)
+USER
+  │ HTTPS
+  ▼
+[ Vercel: frontend/ (static HTML/CSS/JS, build.js injects API base) ]
+  │  POST /api/predict   {"text": "..."}
+  ▼
+[ Render: backend/ → uvicorn app.main:app (FastAPI) ]
+  │  ├─ app/api/routes.py          GET /, GET /health, POST /api/predict
+  │  ├─ app/models/schemas.py      request/response validation
+  │  ├─ app/services/sentiment.py  ONNX Runtime + tokenizer (lazy singleton)
+  │  └─ app/model_assets/          model.onnx (int8, Git LFS) + config/tokenizer
+  ▼
+{ label, confidence, scores }  →  rendered in the Vercel UI
 ```
 
-- Inference intended to run on **ONNX Runtime** (no PyTorch at runtime;
-  PyTorch only for one-time export via `scripts/prepare_model.py`).
-- Evaluation implemented via `scripts/evaluate_model.py` against TweetEval
-  (real results in the Model Evaluation section).
-- **Actual implemented architecture:** `app/config.py` configuration layer,
-  `app/services/sentiment.py` inference service, `app/models/` Pydantic
-  schemas, `app/api/routes.py` routes, `app/main.py` FastAPI assembly
-  (CORS + router), `scripts/evaluate_model.py` evaluation, and the Vercel
-  deployment config (`vercel.json`, `README.md`, entrypoint `app/main.py`) —
-  all functional. The only remaining planned layer is a frontend; deployment
-  config is now added.
+- Backend root = `backend/`; package `app` sits at `backend/app`, so
+  `from app import ...` imports are unchanged and `uvicorn app.main:app` runs
+  with cwd `backend/`.
+- Frontend fetches `${window.SENTIMENT_API_BASE}/api/predict`; the base URL is
+  injected at build time by `frontend/build.js` from `VITE_API_URL` into
+  `frontend/api-config.js` (git-ignored; dev default `http://localhost:8000`).
+- CORS is environment-driven (`FRONTEND_URL` + `SENTIMENT_CORS_ORIGINS`); never
+  `*` with credentials. Defaults include `http://localhost:3000`,
+  `http://127.0.0.1:3000`, `http://localhost:8000`, `http://127.0.0.1:8000`,
+  and `https://sentiment-detector-tau.vercel.app`.
 
-## NLP Model
+## Repository Layout
 
-**EXPORTED AND VERIFIED.**
+```
+C:\Python files\nlp model/
+├── .gitattributes            LFS: backend/app/model_assets/*.onnx
+├── .gitignore                path-independent ignores; frontend/api-config.js
+├── .env.example              documented env vars (no secrets)
+├── .python-version           3.12
+├── LICENSE                   MIT + third-party (cardiffnlp CC BY 4.0, TweetEval CC BY 3.0)
+├── README.md                 migration docs: architecture, local dev, Render + Vercel deploy
+├── OPENCODE_PROGRESS.md      this file
+├── .venv/                    repo-root venv (backend runs `..\.venv\Scripts\python.exe`)
+├── frontend/                 → VERCEL (static only)
+│   ├── index.html            UI, relative asset URLs, api-config.js script tag
+│   ├── styles.css
+│   ├── app.js                reads window.SENTIMENT_API_BASE, fetch /api/predict
+│   ├── build.js              zero-dep build: VITE_API_URL -> api-config.js
+│   ├── favicon.svg
+│   ├── vercel.json           {"buildCommand": "node build.js"} (static)
+│   └── api-config.js         generated, git-ignored (exists locally: http://localhost:8000)
+└── backend/                  → RENDER (FastAPI Web Service)
+    ├── requirements.txt      runtime deps (fastapi, uvicorn, pydantic, onnxruntime, transformers, numpy)
+    ├── requirements-dev.txt  pytest, httpx, scikit-learn, onnx, optimum, torch+cpu
+    ├── render.yaml           Render blueprint (Web Service, python, healthPath /health)
+    ├── app/
+    │   ├── __init__.py       __version__ = "1.0.0"
+    │   ├── config.py         FRONTEND_URL/CORS/MODEL_DIR/MODEL_NAME/MAX_*  (env-driven)
+    │   ├── main.py           create_app() + module-level `app` (uvicorn app.main:app)
+    │   ├── api/routes.py     GET / (JSON service info), GET /health, POST /api/predict (no StaticFiles)
+    │   ├── models/schemas.py PredictRequest/PredictResponse/HealthResponse + validation
+    │   ├── services/sentiment.py  lazy ONNX session + AutoTokenizer, softmax, singleton, predict(max_tokens=)
+    │   └── model_assets/     model.onnx (int8, LFS) + config.json + tokenizer files
+    ├── scripts/              prepare_model.py, evaluate_model.py (+ git-ignored .model_cache/)
+    ├── tests/                70 tests (see Testing Status)
+    └── data/                 model_evaluation_report.txt, confusion_matrix.csv (TweetEval test)
+```
 
-- Chosen model: `cardiffnlp/twitter-roberta-base-sentiment-latest`
-  (referenced in `app/config.py` default `MODEL_NAME`, license notices, and
-  dependency comments).
-- Format: **ONNX, int8-quantized** (weights-only dynamic quant, QUInt8),
-  deployed in `app/model_assets/` as `model.onnx` (~231 MiB).
-- Export flow (executed this session): HF download (cached in
-  `scripts/.model_cache/`) → Optimum FP32 ONNX export (opset 14, inputs
-  `input_ids` + `attention_mask`, outputs `logits`) → `quantize_dynamic`
-  int8 → tokenizer + config files saved to `app/model_assets/` → ONNX
-  Runtime verification (logits shape `(1, 3)` OK) → temp FP32 graph removed.
-- Model downloads used `scripts/.model_cache/` (HF_HOME); the FP32 source
-  graph was deleted after quantization as designed.
-- Verified with an end-to-end inference sanity check outside the script:
-  `AutoTokenizer` + `onnxruntime.InferenceSession` on three sample texts
-  ("This is absolutely amazing! ..." → positive 98.0%; "I hate this, it is
-  terrible." → negative 93.8%; "It is okay, nothing special." → neutral
-  52.8%).
+## Completed Work (migration)
 
-## Dataset
+- **Phase 0 inspection** produced the migration plan (recorded in the previous
+  OPENCODE_PROGRESS.md revision); all numbered migration steps below are done.
+- **`.gitattributes`** — LFS rule repointed to
+  `backend/app/model_assets/*.onnx` (previously `app/model_assets/*.onnx`).
+  `git lfs ls-files` confirms the staged pointer commit:
+  `4f4b088781 * backend/app/model_assets/model.onnx` (134-byte pointer in the
+  index; the 242,491,205-byte binary stays in the working tree).
+- **Repo restructure** (git mv / Move-Item): `app/static/* → frontend/`;
+  `app → backend/app`; `tests → backend/tests`; `scripts → backend/scripts`;
+  `data → backend/data`; `requirements.txt`, `requirements-dev.txt`,
+  `.python-version → backend/`; root `vercel.json` deleted (`git rm`). Staged
+  as ~35 renames.
+- **`.gitignore`** — now path-independent: `.model_cache/`, `dataset/`,
+  `frontend/api-config.js`; `.model_cache` contents mistakenly staged during
+  the move were un-staged.
+- **Backend de-static-ification**:
+  - `backend/app/config.py` — removed `STATIC_DIR`; added `FRONTEND_URL`
+    (prepended to CORS origins) and new default CORS origins
+    (localhost 3000/8000 + Vercel URL); `BASE_DIR`/`MODEL_DIR` resolve via
+    `Path(__file__)` so paths work with cwd = `backend/`.
+  - `backend/app/main.py` — removed `StaticFiles` mount (now API-only; no
+    `backend/app/static`).
+  - `backend/app/api/routes.py` — `GET /` returns JSON service info
+    (`service`, `version`, `docs`, `health`, `predict`) instead of serving
+    HTML; `GET /health` and `POST /api/predict` contract unchanged.
+- **Frontend relocation** — `index.html` uses relative asset URLs (`./styles.css`,
+  `./app.js`, `./favicon.svg`) and loads `api-config.js`; `app.js` reads
+  `window.SENTIMENT_API_BASE` and fetches `/api/predict`; new `build.js`
+  (zero-dep Node) writes `api-config.js` from `VITE_API_URL` (default
+  `http://localhost:8000`); new `frontend/vercel.json` (static build command).
+  `frontend/api-config.js` verified generated locally.
+- **Deployment config** — `.env.example` (all env vars, no secrets);
+  `backend/render.yaml` (Web Service blueprint, root `backend/`, build
+  `pip install -r requirements.txt`, start
+  `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, health check `/health`,
+  free/oregon, `FRONTEND_URL` env with `sync: false`).
+- **Tests adapted** — `backend/tests/test_frontend.py` rewritten (root is JSON
+  service info, not HTML; CORS/intra-origin tests: Vercel origin allowed,
+  `FRONTEND_URL` prepend behavior, docs/openapi/health availability);
+  `backend/tests/test_vercel_config.py` rewritten for the new architecture
+  (frontend `vercel.json` valid + no Python `functions`; static build with
+  `VITE_API_URL`; root `vercel.json` removed; backend entrypoint exports a
+  FastAPI `app`; LFS rule covers `backend/app/model_assets/model.onnx`;
+  model + tokenizer files present on disk; no `backend/app/static`).
 
-**DOWNLOADED INTO `data/dataset/` (git-ignored) AND VERIFIED.**
+## Completed Work (pre-migration baseline, still valid)
 
-- TweetEval `sentiment` (SemEval-2017 Task 4A), 3 classes, label mapping
-  0=negative / 1=neutral / 2=positive (identical to the model's, so no
-  remapping during evaluation), license CC BY 3.0.
-- Raw files fetched from `cardiffnlp/tweeteval` GitHub (raw URLs) by
-  `scripts/evaluate_model.py`: `train_text/labels.txt` (4.74 MiB), `val_text/
-  labels.txt` (0.21 MiB), `test_text/labels.txt` (1.1 MiB). All cached under
-  `data/dataset/`; subsequent runs skip re-downloading.
-- **Verified line counts (loaded via `_load_pairs`):** train **45,615**,
-  val **2,000**, test **12,284** — all match `data/README.md`. Label
-  distributions confirmed sane (e.g. train: 0→7,093 / 1→20,673 / 2→17,849).
-- None of the dataset files are committed (`.gitignore` ignores
-  `data/dataset/`).
+- `app/services/sentiment.py` — `SentimentAnalyzer` lazily loads int8 ONNX via
+  `onnxruntime.InferenceSession` + `AutoTokenizer` from `config.MODEL_DIR`
+  (thread-locked, idempotent), `predict(text)` → `Prediction{label, confidence,
+  scores}`, process-wide `get_analyzer()` singleton; heavy imports deferred.
+- `app/models/schemas.py` — `PredictRequest` (text stripped, 1..2000 chars,
+  `extra="forbid"`), `PredictResponse` (model, label Literal, confidence &
+  scores in [0,1], scores keys exactly the 3 labels), `HealthResponse`.
+- `app/api/routes.py` — `GET /health` (status/model/labels/loaded), `POST
+  /api/predict` (422 on bad payloads, 503 on inference failure, 404/405 handled).
+- Model export + evaluation tooling — `scripts/prepare_model.py` (run; int8
+  ONNX in `model_assets/`) and `scripts/evaluate_model.py` (run; TweetEval
+  test accuracy 0.7208 — see Evaluation).
+- Baseline commit `fa0f277` (later superseded by commits `08afc56` etc. pushed
+  to the `main` branch of `github.com/MukteshMaurya/sentiment-detector`).
+
+## Evaluation (unchanged, real numbers)
+
+`scripts/evaluate_model.py` on the deployed int8 ONNX artifact:
+- **Test split** (12,284): accuracy **0.7208**, macro F1 **0.7201**, weighted
+  F1 **0.7208**. Confusion rows=true cols=pred:
+  `[[2916,995,61],[1078,4242,617],[58,621,1696]]`.
+- **Validation split** (2,000): accuracy **0.7645**.
+- Artifacts: `backend/data/model_evaluation_report.txt`,
+  `backend/data/confusion_matrix.csv`.
 
 ## Testing Status
 
-- **Automated test suite exists** (`tests/`): **58 tests, all passing**
-  (`pytest tests -q`). Breakdown: 14 schema unit tests, 12 service smoke
-  tests, 17 API tests, 8 evaluation-script offline tests, 7 Vercel-config
-  tests; each file also passes in isolation.
-  Run command: `python -m pytest tests -q` (or `.venv\Scripts\python.exe -m pytest tests -q`).
-- Checks actually run in the current session (export run):
-  - `python scripts/prepare_model.py` → **passed**. Full pipeline ran:
-    download (cached) → FP32 ONNX export → int8 dynamic quantization →
-    tokenizer/config saved → ONNX Runtime verification (`logits shape
-    (1, 3)` OK) → FP32 graph removed.
-  - End-to-end inference sanity check (tokenizer + ONNX Runtime, 3 texts) →
-    **passed** with correct predictions (see NLP Model section).
-- Checks actually run in the current session (service):
-  - `python -m compileall -q app` → **passed**.
-  - Direct verification of `app.services` (see Completed Work): 4 texts
-    predicted via `get_analyzer().predict(...)` → all returned correct labels
-    and confidence; `scores` keys exactly `{negative, neutral, positive}`;
-    scores sum ≈ 1.0; `scores[label] == confidence`; confidence in [0,1].
-    `predict("   ")` → `ValueError`, `predict(123)` → `TypeError` — both
-    OK. Model + tokenizer load lazily on first predict (deferred imports).
-  - Direct verification of `app.models` schemas (see Completed Work):
-    valid request accepted (whitespace stripped); whitespace-only / empty /
-    > `MAX_INPUT_CHARS` / non-string / extra fields → rejected; response with
-    bad label, out-of-range confidence, or missing/extra `scores` labels →
-    rejected; `model_dump_json()` round-trips. Full checks run in a throwaway
-    script in the temp dir (not committed).
-  - Integration check: `PredictResponse` built from a real
-    `get_analyzer().predict(...)` result validated and serialized to the
-    expected JSON (`model`, `label`, `confidence`, `scores`).
-  - API checks via `fastapi.testclient.TestClient` on `app.main:app` (see
-    Completed Work): `/health` → 200 with `status=ok`, correct model/labels,
-    `loaded=false` before prediction / `true` after; `/api/predict` happy path
-    (200, scores sum ≈ 1, `confidence` in-range, whitespace-stripped input);
-    blank/empty/too-long/non-string/missing/extra-field payloads → 422; CORS:
-    `Origin: http://localhost:8000` echoed in `access-control-allow-origin`,
-    disallowed origin not echoed, preflight OPTIONS OK; stubbed analyzer
-    raising → 503 with detail; unknown route → 404; `GET /api/predict` → 405.
-  - Live smoke test: `uvicorn app.main:app` on port 8765 (subprocess) served
-    `/health`, `/api/predict` (positive → 200), and 422 for empty text —
-    **passed**.
-  - `python -m compileall -q app scripts tests` → **passed**; `pytest tests -q`
-    → **51 passed** (43 schema/service/API + 8 evaluation-script tests);
-    plus 7 new Vercel-config tests this session → **58 passed**.
-  - Evaluation script end-to-end runs (see Model Evaluation):
-    `scripts/evaluate_model.py --split val` (2,000 samples, ~10.6 min) and
-    `--split test` (12,284 samples, ~68 min) both **passed** and wrote the
-    expected `model_evaluation_report.txt` + `confusion_matrix.csv`.
-
-## Model Evaluation
-
-**DONE — real numbers from TweetEval, no fabrication.**
-
-`scripts/evaluate_model.py` was implemented and run against the TweetEval
-`sentiment` test split (12,284 samples) and validation split (2,000 samples).
-Inference uses the deployed `app/services/sentiment.py` ONNX Runtime path
-with the exact int8 artifact from `app/model_assets/`. Runs used
-`--max-tokens 64` (Tweets are short — max observed 59 tokens on val — so the
-cap truncates effectively nothing while cutting wall-clock >4x).
-
-Committed artifacts (via `python scripts/evaluate_model.py --split test
---max-tokens 64`, default output dir):
-
-- `data/model_evaluation_report.txt`
-- `data/confusion_matrix.csv` (rows = true labels, columns = predicted)
-
-### Test split (12,284 samples, SemEval-2017 Task 4A test)
-
-| Metric | Value |
-|---|---|
-| Accuracy | **0.7208** |
-| Macro F1 | **0.7201** |
-| Weighted F1 | **0.7208** |
-| Micro F1 | 0.7208 |
-
-Per class: precision / recall / F1 (support 3,972 / 5,937 / 2,375):
-
-| Label | Precision | Recall | F1 | Support |
-|---|---|---|---|---|
-| negative | 0.7196 | 0.7341 | 0.7268 | 3,972 |
-| neutral | 0.7241 | 0.7145 | 0.7193 | 5,937 |
-| positive | 0.7144 | 0.7141 | 0.7143 | 2,375 |
-
-Confusion matrix (rows=true, cols=predicted): [[2916,995,61],[1078,4242,617],
-[58,621,1696]] — row sums equal the per-class supports; accuracy ≈ 0.7208
-checks out. The result is consistent with the model's published TweetEval
-accuracy (~0.718, cardiffnlp model card), a sanity signal the eval is honest.
-
-### Validation split (2,000 samples, sanity run, not committed to `data/`)
-
-Accuracy **0.7645**, Macro F1 0.7532, Weighted F1 0.7661.
-
-Note: these numbers are for the deployed **int8-quantized** ONNX artifact;
-small (<0.005) deviations from the FP32 model card figures are expected.
-
-## Current Errors
-
-- **No runtime errors found.** `compileall` passed and `app.config` imports
-  cleanly in the venv.
-
-## Current Blockers
-
-**None.** The model artifact at `app/model_assets/` exists and is verified,
-the model is evaluated (TweetEval test split -> accuracy 0.7208), and the
-Vercel deployment config (`vercel.json` + `README.md`) is in place.
-Remaining work (optional frontend, real Vercel deploy) is unblocked.
+- **`pytest tests -q` from `backend/` → 70 passed** (1 harmless
+  `StarletteDeprecationWarning` from `fastapi.testclient`). Run with
+  `C:\Python files\nlp model\.venv\Scripts\python.exe` (cwd `backend/`).
+  Breakdown: `test_schemas.py` 14, `test_sentiment_service.py` 12,
+  `test_api.py` 17, `test_evaluate_script.py` 8, `test_frontend.py` 10,
+  `test_vercel_config.py` 9.
+- **`python -m compileall -q app scripts tests`** (from `backend/`) → passed.
+- **Live backend smoke test** (uvicorn `app.main:app` on 127.0.0.1:8765):
+  - `GET /` → `{"service": "AI Sentiment Detector API", "version": "1.0.0",
+    "docs": "/docs", ...}` (JSON, not HTML).
+  - `GET /docs` → 200; `GET /health` → `{"status": "ok", "loaded": false}`.
+  - `POST /api/predict` real inferences:
+    - "I absolutely love this product!" → **positive 0.9812**
+    - "I hate this product." → **negative 0.9336**
+    - "The product arrived today." → **positive 0.8294** (actual model output;
+      the model does not produce neutral here)
+  - CORS: `Origin: https://sentiment-detector-tau.vercel.app` echoed in
+    `access-control-allow-origin` (200); disallowed `https://evil.example`
+    NOT echoed; preflight OPTIONS from the Vercel origin → 200 with ACAO +
+    allow-methods.
+- **Live frontend↔backend bridge** (static `http.server` on 8766 + README-style
+  `FRONTEND_URL=http://localhost:8766` backend on 8765):
+  - `GET /index.html` → 200, contains the sentiment form + `api-config.js`
+    tag; `GET /api-config.js` → generated script with
+    `window.SENTIMENT_API_BASE = "http://localhost:8000"` (dev default).
+  - Cross-origin `POST /api/predict` from origin `http://localhost:8766` →
+    200, ACAO echoed, label positive 0.9812. **The split deploy path is proven
+    locally.**
 
 ## Vercel Status
 
-**CONFIGURED (files in place, deployment not yet executed).**
+**CONFIGURED; deployment requires user action (no VERCEL_TOKEN / logged-in
+Vercel CLI on this machine).**
 
-- `vercel.json` keys the resolved FastAPI function (`"app/main.py"`) with
-  `maxDuration: 300` (valid on every plan; Hobby default and maximum) and
-  `excludeFiles: "{tests/**,scripts/**,data/**,**/*.md}"` to slim the bundle.
-- Entrypoint: Vercel zero-config-detects FastAPI from `app.main`:app (`app`
-  in `app/main.py`, a supported entrypoint). No `api/index.py` was added to
-  avoid duplicate-entrypoint ambiguity. `.gitignore` ignores `.vercel/`.
-- Grounded in Vercel's current FastAPI/Python docs (fetched this session):
-  500 MB uncompressed Python bundle limit (standard) — the ~231 MB int8 model
-  + deps fit; Large Functions beta up to 5 GB via
-  `VERCEL_SUPPORT_LARGE_FUNCTIONS=1`; Hobby 2 GB RAM / 1 vCPU; 4.5 MB
-  request-body limit; lazy ~15-30 s model cold start covered by 300 s.
-- Root `README.md` includes full deploy instructions (git-import +
-  `vercel dev` / `vercel --prod`) and the env-var table
-  (esp. `SENTIMENT_CORS_ORIGINS` for a production frontend origin).
-- Blocking-caveat: deployment has **not** been executed from this machine;
-  the config follows documented Vercel guidance and must be confirmed with
-  `vercel dev` then a real deploy.
+- Vercel project: `sentiment-detector-tau` (URL
+  https://sentiment-detector-tau.vercel.app) on branch `main` of
+  `github.com/MukteshMaurya/sentiment-detector`. Current deployed commit is
+  `08afc56` (pre-migration): it served the static UI but `/api/predict`
+  returned 503 due to the unresolved LFS-pointer model.
+- Migration requirements once pushed:
+  1. Project → Settings → Root Directory = **`frontend/`** (static build,
+     `node build.js` per `frontend/vercel.json`).
+  2. Add `VITE_API_URL` env var = the Render backend URL (e.g.
+     `https://sentiment-detector-backend.onrender.com`).
+  3. Redeploy → artifact = 4 static files, **no Vercel Function, no
+     `model.onnx`**.
 
-## Dependencies
+## Render Status
 
-Installed in `.venv` (runtime):
-`fastapi 0.141.1`, `uvicorn 0.53.0`, `pydantic 2.13.5`, `onnxruntime 1.30.0`,
-`transformers 4.57.6`, `numpy 2.5.3`, `huggingface_hub 0.36.2`,
-`tokenizers 0.22.2`, plus transitive deps (starlette 1.7.0, anyio, etc.).
+**CONFIGURED via `backend/render.yaml`; deployment requires user action (no
+Render credentials on this machine).**
 
-Installed in `.venv` (dev/eval/export) in this session:
-`pytest 9.1.1`, `httpx 0.28.1`, `scikit-learn 1.9.1`, `onnx 1.23.0`,
-`torch 2.14.0+cpu` (CUDA **not** bundled — verified `+cpu` tag), `optimum 2.1.0`,
-`optimum-onnx 0.1.0`, plus new transitive deps (scipy, joblib, iniconfig,
-pluggy, pygments, httpcore, jinja2, etc.).
+- Create a `backend/` Root-Directory Web Service (or Blueprint) → uses
+  `backend/render.yaml`: build `pip install -r requirements.txt`, start
+  `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, health check `/health`.
+- Render fetches Git LFS objects automatically at build; the ONNX model arrives
+  as the real 231 MB binary.
+- Set `FRONTEND_URL` = the Vercel frontend origin (default already
+  `https://sentiment-detector-tau.vercel.app`), so CORS allows the UI.
 
-Note: torch was pulled in automatically as an `optimum` dependency and is the
-CPU build (`2.14.0+cpu`), so the separate
-`pip install torch --index-url https://download.pytorch.org/whl/cpu` step is
-**not required** on this machine.
+## Git State
+
+- Branch `main`; remote `github.com/MukteshMaurya/sentiment-detector`; HEAD on
+  the remote = `08afc56`.
+- **The migration is NOT yet committed.** Index currently holds the restructured
+  tree (≈35 `R` rename entries + `D vercel.json`, with the `model.onnx` index
+  blob being the 134-byte LFS pointer `4f4b088781`); working-tree edits made
+  after staging (`backend/app/config.py`, `main.py`, `api/routes.py`,
+  new `frontend/build.js`, `frontend/vercel.json`, `.env.example`,
+  `backend/render.yaml`, `.gitignore`, `.gitattributes`, new README,
+  `backend/tests/*`) need `git add` before commit.
+- `.venv/`, `backend/scripts/.model_cache/`, `backend/data/dataset/`, and
+  `frontend/api-config.js` are git-ignored; no secrets exist in the repo.
+- Next: re-`git add`, commit with a migration message, `git push origin main`,
+  verify `git lfs ls-files` still lists the pointer.
+
+## Current Errors / Blockers
+
+- **None in the code base.** compileall + 70 tests + live smoke tests pass.
+- **Blocked on deployment credentials:** no `VERCEL_TOKEN` (the user selected
+  "Provide a VERCEL_TOKEN" but none was supplied) and no Render credentials.
+  The Vercel CLI (v60.0.1 via `npx vercel`) is logged out.
 
 ## Environment
 
-- OS: Windows (win32), Python 3.12 (`.python-version`), venv at `.venv/`.
-- Git repo on branch `master` — **initially committed** as `fa0f277`
-  ("Initial commit: AI Sentiment Detector", 36 files). Working tree clean.
-- Git LFS **3.7.1 installed and verified**: `app/model_assets/*.onnx` tracked
-  (`.gitattributes`), `model.onnx` committed as an LFS pointer
-  (`git lfs ls-files` → `4f4b088781 *`). Run `git push --all` when the remote
-  is configured; do not force-push.
-- No `.env` file present; no secrets exist in the repo.
-- Active local dev server origins: `http://localhost:8000`, `http://127.0.0.1:8000`.
+- OS: Windows (win32); PowerShell 5.1; working dir `C:\Python files\nlp model`.
+- Python 3.12 (`.python-version`); venv at repo root `.venv`
+  (`C:\Python files\nlp model\.venv`); backend runs with cwd = `backend/`.
+- Node v24.21.0 available (used by `frontend/build.js`).
+- git + git-lfs installed and verified; `.python-version` apps per above.
 
 ## NEXT STEPS
 
-Based on the actual state, in dependency order:
-
-1. **DONE — Install dev dependencies**: `pip install -r requirements-dev.txt`.
-   (`pytest`, `httpx`, `scikit-learn`, `onnx`, `optimum`, `optimum-onnx`
-   installed; `torch 2.14.0+cpu` pulled implicitly — CPU-only, CUDA not
-   bundled, so no separate torch install needed.)
-2. **DONE — Write `scripts/prepare_model.py`** — exports
-   `cardiffnlp/twitter-roberta-base-sentiment-latest` to int8-quantized ONNX +
-   tokenizer into `app/model_assets/`.
-3. **DONE — Run the export** — `python scripts/prepare_model.py` produced
-   `app/model_assets/` (`model.onnx` ~231 MiB, `config.json`, tokenizer files);
-   inline verification passed (logits `(1, 3)`) plus an end-to-end inference
-   sanity check. Required two fixes to the script (see "Files Modified"):
-   Optimum task name `sequence-classification` → `text-classification`, and
-   explicit `from onnxruntime.quantization import QuantType, quantize_dynamic`.
-4. **DONE — Implement `app/services/`** inference service
-   (`app/services/sentiment.py`). `SentimentAnalyzer` lazily loads the ONNX
-   session (CPUExecutionProvider) + `AutoTokenizer` from `config.MODEL_DIR`,
-   `predict(text)` returns `Prediction{label, confidence,
-   scores:{negative,neutral,positive}}`; `get_analyzer()` provides a
-   singleton. Verified with direct inference on 4 texts + input validation
-   checks (see Testing Status).
-5. **DONE — Implement `app/models/`** Pydantic schemas
-   (`app/models/schemas.py`, re-exported from `app.models`).
-   `PredictRequest.text` = non-blank string ≤ `MAX_INPUT_CHARS` (2000),
-   whitespace-stripped; `PredictResponse` = `{model, label (Literal over
-   config.LABELS), confidence ∈ [0,1], scores {negative,neutral,positive}}`
-   with `scores` keys validated and `extra="forbid"`. Verified with 12+ schema
-   checks plus an integration round-trip from a real service prediction (see
-   Testing Status).
-6. **DONE — Implement `app/api/`** FastAPI routes and application assembly.
-   `app/api/routes.py` exposes `GET /health` (status/model/labels/loaded) and
-   `POST /api/predict` (schema-validated, 503 on inference failure);
-   `app/main.py` builds the FastAPI app with CORS from `config.CORS_ORIGINS`
-   and the router. Verified via `TestClient` (happy path, 422s, CORS echo +
-   disallowed origin + preflight, 503 stub, 404/405) and a live `uvicorn`
-   smoke test (see Testing Status).
-7. **DONE — Write tests** under `tests/` (service smoke test + API tests with
-   httpx), then run `pytest`. Suite = `tests/test_schemas.py` (14) +
-   `tests/test_sentiment_service.py` (12, incl. `max_tokens`) +
-   `tests/test_api.py` (17) + `tests/test_evaluate_script.py` (8) =
-   **51 tests. `pytest tests -q` → 51 passed** (also passes per-file).
-8. **DONE — Write `scripts/evaluate_model.py`** — download TweetEval into
-   `data/dataset/`, run evaluation, emit `data/model_evaluation_report.txt`
-   and `data/confusion_matrix.csv`. Ran on the full test split (12,284
-   samples): Accuracy **0.7208**, Macro F1 **0.7201**, Weighted F1 **0.7208**
-   (see Model Evaluation). `SentimentAnalyzer.predict()` gained an optional
-   `max_tokens` kwarg used by the tool; dataset files downloaded + verified
-   (train 45,615 / val 2,000 / test 12,284).
-9. **DONE — Add Vercel config** (`vercel.json` + serverless entrypoint) and a
-   root `README.md` with setup/deploy instructions. Entrypoint = the existing
-   `app/main.py` (Vercel auto-detects FastAPI from it; zero-config), so no
-   duplicate `api/index.py` was created. `vercel.json` tunes the resolved
-   function: `maxDuration` 300 (all plans) + safe `excludeFiles`; `README.md`
-   documents setup/run/test/eval and Vercel deploy steps (see Vercel Status).
-   `tests/test_vercel_config.py` guards the config (7 tests). Deployment
-   itself was **not** run from this machine.
-10. **DONE — Commit initial state** via git (with Git LFS for the ONNX
-    model). Committed as `fa0f277` "Initial commit: AI Sentiment Detector"
-    (36 files, 303k insertions). `model.onnx` is an LFS pointer
-    (`git lfs ls-files` → `4f4b088781`); `data/dataset/` and `scripts/
-    .model_cache/` are git-ignored and not committed; no secrets in the
-    commit. Working tree clean. (Remote push reserved for when a remote is
-    configured.)
-
-All numbered NEXT STEPS are now complete. Optional follow-ups (not numbered
-NEXT STEPS): a frontend, and an actual Vercel deployment run.
+1. **Re-stage and commit the migration** — `git add -A` (picks up the edits
+   made after the initial `git add`), then commit with a message describing the
+   split (e.g. "Migrate to Vercel frontend + Render backend"). Verify
+   `git lfs ls-files` still shows `4f4b088781 * backend/app/model_assets/model.onnx`.
+2. **Push** to `origin main` (do not force-push).
+3. **Deploy (user action — agent is blocked on credentials):**
+   - Render: create Web Service/Blueprint from `backend/`; set `FRONTEND_URL`.
+   - Vercel: set Root Directory `frontend/`; set `VITE_API_URL`; redeploy.
+   - Agent can then verify prod endpoints if network access allows.
+4. **Final self-check** — report PASS/FAIL honestly; anything not verifiable
+   without deployment credentials is marked as such.
 
 ## RESUME INSTRUCTION
 
 Read OPENCODE_PROGRESS.md first.
-Inspect the actual project files.
-Do not repeat completed work.
-Continue from NEXT STEPS.
-Run tests after changes.
+Inspect the actual project files (do not trust memory).
+Do not repeat completed work; start from git state (uncommitted migration).
+Run tests after changes (`cd backend; ..\.venv\Scripts\python.exe -m pytest tests -q`).
 Update OPENCODE_PROGRESS.md after every major milestone.

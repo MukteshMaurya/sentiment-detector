@@ -1,0 +1,25 @@
+# Render blueprint for the AI Sentiment Detector backend.
+#
+# Root directory is this folder (backend/), so `app.main:app` resolves and
+# the 231 MB ONNX model ships with the image. Deploy via Dashboard:
+#   New -> Blueprint -> this repo  (or "New Web Service" with root = backend/)
+#
+# Notes:
+#   - Runtime default Python is 3.12, matching .python-version.
+#   - The model (backend/app/model_assets/model.onnx, Git LFS) is pulled by
+#     Render's build from the Git LFS objects of the linked branch.
+#   - $PORT is provided by Render and wired into the uvicorn start command.
+
+services:
+  - type: web
+    name: sentiment-detector-backend
+    runtime: python
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: FRONTEND_URL
+        sync: false
+      # Optional: - key: SENTIMENT_CORS_ORIGINS / sync: false

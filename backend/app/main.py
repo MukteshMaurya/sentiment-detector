@@ -3,13 +3,15 @@
 Run with ``uvicorn app.main:app``; the ``app`` module-level instance is the
 single source of truth used by the dev server, deployment entrypoints, and
 tests.
+
+Serves only the API: the sentiment frontend is a separate static deployment
+(Vercel) that calls this backend over HTTPS.
 """
 
 from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app import __version__, config
 from app.api.routes import router
@@ -31,14 +33,6 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     application.include_router(router)
-    # Frontend assets (CSS/JS/favicon) served from app/static. Declared after
-    # the API router so API routes keep priority; the bare "/" route itself is
-    # an explicit router route that wins over any static index.
-    application.mount(
-        "/static",
-        StaticFiles(directory=str(config.STATIC_DIR)),
-        name="static",
-    )
     return application
 
 

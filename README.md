@@ -13,11 +13,12 @@ deployment](#deploy-to-vercel).
 
 ```
 ├── app/
-│   ├── main.py              FastAPI assembly: CORS + router (the Vercel entrypoint)
+│   ├── main.py              FastAPI assembly: CORS + static + router (the Vercel entrypoint)
 │   ├── config.py            Environment-driven configuration
-│   ├── api/routes.py        GET /health, POST /api/predict
+│   ├── api/routes.py        GET / (frontend), GET /health, POST /api/predict
 │   ├── models/schemas.py    Pydantic request/response schemas + validation
 │   ├── services/sentiment.py  ONNX Runtime + tokenizer service, softmax, singleton
+│   ├── static/              Frontend served at GET / (index.html, styles.css, app.js, favicon)
 │   └── model_assets/        model.onnx (int8) + config.json + tokenizer files
 ├── scripts/
 │   ├── prepare_model.py     One-time exporter to int8-quantized ONNX (dev tool)
@@ -49,6 +50,7 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload
 ```
 
+- Web UI: http://127.0.0.1:8000/ (text input → analyze → sentiment + confidence)
 - Interactive docs: http://127.0.0.1:8000/docs
 - Health check:
 
@@ -92,7 +94,7 @@ curl -i http://127.0.0.1:8000/api/predict \
 ## Tests
 
 ```bash
-pytest tests -q        # 58 tests: schemas, real-model service, API, eval, vercel config
+pytest tests -q        # 67 tests: schemas, real-model service, API, frontend, eval, vercel config
 ```
 
 ## Model export (one-time, dev only)
@@ -170,9 +172,20 @@ bundle.
   well under that on the standard path. If you ever exceed it, set
   `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` (Large Functions beta, up to 5 GB, Fluid
   compute).
+- **Git LFS:** `model.onnx` is tracked via Git LFS. Enable **Project Settings
+  → Git → Git Large File Storage (LFS)** so Vercel pulls the real 231 MB
+  binary instead of deploying the LFS pointer file (which makes the model
+  fail with `INVALID_PROTOBUF` / HTTP 503). Then redeploy. See
+  https://vercel.com/docs/project-configuration/git-settings.
+- **Frontend:** served by the FastAPI app itself — `GET /` returns
+  `app/static/index.html` and `app.mount("/static", StaticFiles(...))` serves
+  the CSS/JS/favicon. Vercel collects `StaticFiles` mounts and serves them
+  from the CDN edge (or from the function when middleware is present); either
+  way the assets resolve at `/static/...`.
 - **CORS:** the server allows only `SENTIMENT_CORS_ORIGINS`. You must set
-  that env var to the real frontend origin in production (it defaults to
-  localhost only). Do **not** allow credentials with `*`.
+  that env var to the real frontend origin in production (the default covers
+  localhost dev + this repo's production URL). Do **not** allow credentials
+  with `*`.
 - **Memory:** Hobby gives 2 GB RAM / 1 vCPU, which is enough to hold the model
   plus dependencies.
 

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI Sentiment Detector — classify text as positive, negative, or neutral with a local RoBERTa model." />
+  <title>AI Sentiment Detector</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="hero">
+      <h1>AI Sentiment Detector</h1>
+      <p class="subtitle">Enter some text and let the model tell you its sentiment.</p>
+    </header>
+
+    <section class="card">
+      <form id="sentiment-form" autocomplete="off">
+        <label class="visually-hidden" for="text-input">Text to analyze</label>
+        <textarea
+          id="text-input"
+          name="text"
+          rows="4"
+          maxlength="2000"
+          placeholder="I absolutely love this product!"
+          required
+        ></textarea>
+        <div class="form-row">
+          <span id="char-count" class="char-count" aria-live="polite">0 / 2000</span>
+          <button id="analyze-btn" type="submit" disabled>
+            <span class="btn-label">Analyze</span>
+            <span class="spinner" hidden aria-hidden="true"></span>
+          </button>
+        </div>
+      </form>
+      <p id="error-box" class="error" role="alert" hidden></p>
+      <section id="result" class="result" hidden aria-live="polite"></section>
+    </section>
+
+    <footer class="footer">
+      <p>RoBERTa (cardiffnlp) · int8 quantized ONNX · ONNX Runtime</p>
+    </footer>
+  </main>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

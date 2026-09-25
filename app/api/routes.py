@@ -1,6 +1,7 @@
 """HTTP routes for the sentiment API.
 
-Exposes ``GET /health`` and ``POST /api/predict`` on a shared ``APIRouter``.
+Exposes ``GET /`` (frontend), ``GET /health``, and ``POST /api/predict`` on a
+shared ``APIRouter``.
 """
 
 from __future__ import annotations
@@ -8,6 +9,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 
 from app import config
 from app.models import HealthResponse, PredictRequest, PredictResponse
@@ -16,6 +18,12 @@ from app.services import get_analyzer
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    """Serve the AI Sentiment Detector web interface."""
+    return FileResponse(config.STATIC_DIR / "index.html")
 
 
 @router.get("/health", response_model=HealthResponse, tags=["health"])

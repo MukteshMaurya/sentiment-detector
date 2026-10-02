@@ -199,6 +199,28 @@ button:disabled {
   gap: 10px;
 }
 
+/* Shown only for Hindi / Hinglish input that the API translated. */
+.translation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.translation__source {
+  color: var(--text);
+}
+.translation__target {
+  color: var(--text);
+  font-weight: 600;
+}
+.translation__arrow {
+  color: var(--accent);
+}
+
 .bar {
   display: grid;
   grid-template-columns: 84px 1fr 52px;

@@ -37,9 +37,36 @@
       .join("");
   }
 
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // Shown only when the API reports a translation (Hindi / Hinglish input).
+  function renderTranslation(data) {
+    if (data.translation_status !== "translated" || !data.translated_text) {
+      return "";
+    }
+    return (
+      '<p class="translation">Translated from ' +
+      '<span class="translation__source" lang="hi">' +
+      escapeHtml(data.original_text || "") +
+      "</span>" +
+      '<span class="translation__arrow" aria-hidden="true">&rarr;</span>' +
+      '<span class="translation__target">' +
+      escapeHtml(data.translated_text) +
+      "</span></p>"
+    );
+  }
+
   function renderResult(data) {
     resultBox.innerHTML =
       '<h2 class="result__heading">Result</h2>' +
+      renderTranslation(data) +
       '<div class="result__summary">' +
       '<span class="' + (data.label === "positive" ? "badge badge--positive" : data.label === "negative" ? "badge badge--negative" : "badge badge--neutral") + '">' + renderLabel(data.label) + "</span>" +
       '<span class="confidence">Confidence <strong>' + (data.confidence * 100).toFixed(1) + "%</strong></span>" +

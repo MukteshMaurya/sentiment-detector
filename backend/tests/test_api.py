@@ -135,3 +135,89 @@ def test_unknown_route_returns_404(client: TestClient) -> None:
 
 def test_get_on_predict_returns_405(client: TestClient) -> None:
     assert client.get("/api/predict").status_code == 405
+
+
+# --------------------------------------------------------------------------
+# Hindi / Hinglish translation fields (additive, must not break the contract)
+# --------------------------------------------------------------------------
+
+
+def test_predict_english_reports_not_needed(client: TestClient) -> None:
+    body = client.post(
+        "/api/predict", json={"text": "I absolutely love this product!"}
+    ).json()
+    assert body["translation_status"] == "not_needed"
+    assert body["translated_text"] is None
+    assert body["original_text"] == "I absolutely love this product!"
+
+
+def test_predict_devanagari_is_translated(client: TestClient) -> None:
+    response = client.post("/api/predict", json={"text": "यह उत्पाद बहुत खराब है।"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["translation_status"] == "translated"
+    assert body["translated_text"]
+    assert body["original_text"] == "यह उत्पाद बहुत खराब है।"
+    assert body["label"] in config.LABELS
+
+
+def test_predict_hinglish_is_translated(client: TestClient) -> None:
+    response = client.post(
+        "/api/predict", json={"text": "Mujhe ye product bahut achha laga"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["translation_status"] == "translated"
+    assert "product" in body["translated_text"].lower()
+    assert body["original_text"] == "Mujhe ye product bahut achha laga"
+
+
+def test_predict_english_with_a_person_name_is_not_translated(
+    client: TestClient,
+) -> None:
+    """Regression: a person named "Mukesh" must not trigger translation.
+
+    "Mukesh" and "name" used to be treated as weak Hinglish markers, so this
+    ordinary English sentence was sent to the MT model. It must stay on the
+    normal English sentiment path: no translation, original text untouched.
+    """
+    text = "My friend Mukesh told me the name of the restaurant"
+    response = client.post("/api/predict", json={"text": text})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["translation_status"] == "not_needed"
+    assert body["translated_text"] is None
+    assert body["original_text"] == text
+    assert body["model"] == config.MODEL_NAME
+    assert body["label"] in config.LABELS
+
+
+def test_predict_translation_failure_still_returns_200(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    """A translation failure degrades to analyzing the original text."""
+    import app.services.translation as translation_mod
+
+    class Broken:
+        loaded = False
+
+        def translate(self, text: str) -> str:
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(translation_mod, "get_translator", lambda: Broken())
+    response = client.post("/api/predict", json={"text": "Ye product bahut kharab hai"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["translation_status"] == "failed"
+    assert body["translated_text"] is None
+    assert body["label"] in config.LABELS
+
+
+def test_existing_response_fields_are_unchanged(client: TestClient) -> None:
+    """The original contract must keep its exact field set and validation."""
+    body = client.post("/api/predict", json={"text": "nice"}).json()
+    for field in ("model", "label", "confidence", "scores"):
+        assert field in body
+    assert body["model"] == config.MODEL_NAME
+    assert set(body["scores"]) == set(config.LABELS)
+    assert sum(body["scores"].values()) == pytest.approx(1.0, abs=1e-4)

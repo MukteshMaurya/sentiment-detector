@@ -23,6 +23,9 @@ from app import config
 # The three sentiment labels, in model logit order (matches config.json id2label).
 Label = Literal[*config.LABELS]
 
+# Outcome of Hindi/Hinglish preprocessing (see app/services/translation.py).
+TranslationStatus = Literal["not_needed", "translated", "failed"]
+
 # Non-empty (after stripping whitespace) and bounded by MAX_INPUT_CHARS.
 TextInput = Annotated[
     str,
@@ -55,6 +58,17 @@ class PredictResponse(BaseModel):
     label: Label
     confidence: Probability
     scores: dict[str, Probability]
+
+    # --- Optional Hindi/Hinglish metadata -------------------------------
+    # These are additive: existing clients reading model/label/confidence/
+    # scores keep working, and every field below may legitimately be null
+    # for English input or when translation is unavailable.
+    #: Exactly the text that was submitted, after request validation.
+    original_text: str | None = None
+    #: English rendering of the input, or null when none was produced.
+    translated_text: str | None = None
+    #: "not_needed" for English, "translated", or "failed" (original analyzed).
+    translation_status: TranslationStatus | None = None
 
     @field_validator("scores")
     @classmethod

@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 
 from app import __version__, config
 from app.models import HealthResponse, PredictRequest, PredictResponse
-from app.services import get_analyzer
+from app.services import get_analyzer, prepare_text
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +46,16 @@ def health() -> HealthResponse:
 
 @router.post("/api/predict", response_model=PredictResponse, tags=["predict"])
 def predict(request: PredictRequest) -> PredictResponse:
-    """Predict the sentiment of ``request.text``."""
+    """Predict the sentiment of ``request.text``.
+
+    Devanagari Hindi and Romanized Hindi/Hinglish are translated to English
+    first; English passes straight through. ``prepare_text`` never raises, so
+    a translation problem degrades to analyzing the original text instead of
+    failing the request.
+    """
+    prepared = prepare_text(request.text)
     try:
-        prediction = get_analyzer().predict(request.text)
+        prediction = get_analyzer().predict(prepared.text_for_model)
     except Exception as exc:  # missing model, runtime/ONNX errors -> 503
         logger.exception("Prediction failed")
         raise HTTPException(
@@ -59,4 +66,7 @@ def predict(request: PredictRequest) -> PredictResponse:
         label=prediction.label,
         confidence=prediction.confidence,
         scores=prediction.scores,
+        original_text=prepared.original_text,
+        translated_text=prepared.translated_text,
+        translation_status=prepared.status,
     )
